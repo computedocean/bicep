@@ -72,6 +72,7 @@ namespace Bicep.Core
         public const string ExistingKeyword = "existing";
         public const string ImportKeyword = "import";
         public const string ProviderKeyword = "provider";
+        public const string ExtensionKeyword = "extension";
         public const string AssertKeyword = "assert";
         public const string WithKeyword = "with";
         public const string AsKeyword = "as";
@@ -117,7 +118,9 @@ namespace Bicep.Core
             .Add(IfKeyword)
             .Add(ForKeyword)
             .Add(InKeyword)
-            .Add(FromKeyword);
+            .Add(FromKeyword)
+            .Add(WithKeyword)
+            .Add(AsKeyword);
 
         public const string TrueKeyword = "true";
         public const string FalseKeyword = "false";
@@ -128,13 +131,11 @@ namespace Bicep.Core
 
         public const string McrRepositoryPrefix = "bicep/";
 
-        public static readonly ImmutableDictionary<string, TokenType> Keywords = new Dictionary<string, TokenType>(StringComparer.Ordinal)
+        public static readonly ImmutableDictionary<string, TokenType> NonContextualKeywords = new Dictionary<string, TokenType>(StringComparer.Ordinal)
         {
             [TrueKeyword] = TokenType.TrueKeyword,
             [FalseKeyword] = TokenType.FalseKeyword,
             [NullKeyword] = TokenType.NullKeyword,
-            [WithKeyword] = TokenType.WithKeyword,
-            [AsKeyword] = TokenType.AsKeyword,
         }.ToImmutableDictionary();
 
         // Decorators
