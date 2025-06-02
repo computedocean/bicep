@@ -3,7 +3,7 @@
 using System.Collections.Immutable;
 using System.Reflection;
 using Bicep.Core.Resources;
-using Bicep.Core.TypeSystem.Providers.ThirdParty;
+using Bicep.Core.TypeSystem.Providers.Extensibility;
 using Bicep.Core.TypeSystem.Types;
 
 namespace Bicep.Core.TypeSystem.Providers.MicrosoftGraph
@@ -14,7 +14,7 @@ namespace Bicep.Core.TypeSystem.Providers.MicrosoftGraph
         public const string AppIdPropertyName = "appId";
         public const string NamePropertyName = "name";
 
-        public static readonly TypeSymbol Tags = new ObjectType(nameof(Tags), TypeSymbolValidationFlags.Default, [], LanguageConstants.String, TypePropertyFlags.None);
+        public static readonly TypeSymbol Tags = new ObjectType(nameof(Tags), TypeSymbolValidationFlags.Default, [], new TypeProperty(LanguageConstants.String));
 
         private readonly MicrosoftGraphResourceTypeLoader resourceTypeLoader;
         private readonly ResourceTypeCache definedTypeCache;
@@ -36,7 +36,7 @@ namespace Bicep.Core.TypeSystem.Providers.MicrosoftGraph
                 UniqueNamePropertyName);
 
         public MicrosoftGraphResourceTypeProvider(MicrosoftGraphResourceTypeLoader resourceTypeLoader)
-            : base(resourceTypeLoader.GetAvailableTypes().ToImmutableHashSet())
+            : base([.. resourceTypeLoader.GetAvailableTypes()])
         {
             this.resourceTypeLoader = resourceTypeLoader;
             definedTypeCache = new ResourceTypeCache();
@@ -59,9 +59,8 @@ namespace Bicep.Core.TypeSystem.Providers.MicrosoftGraph
                         bodyObjectType = new ObjectType(
                             bodyObjectType.Name,
                             bodyObjectType.ValidationFlags,
-                            bodyObjectType.Properties.SetItem(UniqueNamePropertyName, new TypeProperty(nameProperty.Name, LanguageConstants.String, nameProperty.Flags)).Values,
-                            bodyObjectType.AdditionalPropertiesType,
-                            bodyObjectType.AdditionalPropertiesFlags,
+                            bodyObjectType.Properties.SetItem(UniqueNamePropertyName, new NamedTypeProperty(nameProperty.Name, LanguageConstants.String, nameProperty.Flags)).Values,
+                            bodyObjectType.AdditionalProperties,
                             bodyObjectType.MethodResolver.CopyToObject);
 
                         bodyType = SetBicepResourceProperties(bodyObjectType, resourceType.ValidParentScopes, resourceType.TypeReference, flags);
@@ -82,7 +81,7 @@ namespace Bicep.Core.TypeSystem.Providers.MicrosoftGraph
         private static ObjectType SetBicepResourceProperties(ObjectType objectType, ResourceScope validParentScopes, ResourceTypeReference typeReference, ResourceTypeGenerationFlags flags)
         {
             // Local function.
-            static TypeProperty UpdateFlags(TypeProperty typeProperty, TypePropertyFlags flags) =>
+            static NamedTypeProperty UpdateFlags(NamedTypeProperty typeProperty, TypePropertyFlags flags) =>
                 new(typeProperty.Name, typeProperty.TypeReference, flags, typeProperty.Description);
 
             var properties = objectType.Properties;
@@ -94,7 +93,7 @@ namespace Bicep.Core.TypeSystem.Providers.MicrosoftGraph
             else
             {
                 // TODO: remove 'dependsOn' from the type library
-                properties = properties.SetItem(LanguageConstants.ResourceDependsOnPropertyName, new TypeProperty(LanguageConstants.ResourceDependsOnPropertyName, LanguageConstants.ResourceOrResourceCollectionRefArray, TypePropertyFlags.WriteOnly | TypePropertyFlags.DisallowAny));
+                properties = properties.SetItem(LanguageConstants.ResourceDependsOnPropertyName, new NamedTypeProperty(LanguageConstants.ResourceDependsOnPropertyName, LanguageConstants.ResourceOrResourceCollectionRefArray, TypePropertyFlags.WriteOnly | TypePropertyFlags.DisallowAny));
             }
 
             // add the loop variant flag to the uniqueName property (if it exists)
@@ -123,23 +122,24 @@ namespace Bicep.Core.TypeSystem.Providers.MicrosoftGraph
                 objectType.Name,
                 objectType.ValidationFlags,
                 isExistingResource ? ConvertToReadOnly(properties.Values) : properties.Values,
-                objectType.AdditionalPropertiesType,
-                isExistingResource ? ConvertToReadOnly(objectType.AdditionalPropertiesFlags) : objectType.AdditionalPropertiesFlags,
+                isExistingResource && objectType.AdditionalProperties is not null
+                    ? objectType.AdditionalProperties with { Flags = ConvertToReadOnly(objectType.AdditionalProperties.Flags) }
+                    : objectType.AdditionalProperties,
                 functions: null);
         }
 
-        private static IEnumerable<TypeProperty> ConvertToReadOnly(IEnumerable<TypeProperty> properties)
+        private static IEnumerable<NamedTypeProperty> ConvertToReadOnly(IEnumerable<NamedTypeProperty> properties)
         {
             foreach (var property in properties)
             {
                 // "uniqueName", "name", "appId", "scope" & "parent" can be set for existing resources - everything else should be read-only
-                if (UniqueIdentifierProperties.Contains(property.Name))
+                if (UniqueIdentifierProperties.Contains(property.Name) || property.Flags.HasFlag(TypePropertyFlags.ResourceIdentifier))
                 {
                     yield return property;
                 }
                 else
                 {
-                    yield return new TypeProperty(property.Name, property.TypeReference, ConvertToReadOnly(property.Flags));
+                    yield return new NamedTypeProperty(property.Name, property.TypeReference, ConvertToReadOnly(property.Flags));
                 }
             }
         }
@@ -181,7 +181,7 @@ namespace Bicep.Core.TypeSystem.Providers.MicrosoftGraph
         public IEnumerable<ResourceTypeReference> GetAvailableTypes()
             => availableResourceTypes;
 
-        public ThirdPartyResourceTypeLoader.NamespaceConfiguration? GetNamespaceConfiguration()
+        public ExtensionResourceTypeLoader.NamespaceConfiguration? GetNamespaceConfiguration()
         {
             return resourceTypeLoader.LoadNamespaceConfiguration();
         }

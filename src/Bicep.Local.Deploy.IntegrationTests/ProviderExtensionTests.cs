@@ -3,8 +3,10 @@
 
 using System.Diagnostics;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Azure.Deployments.Expression.Expressions;
 using Bicep.Core.UnitTests;
 using Bicep.Core.UnitTests.Assertions;
 using Bicep.Core.UnitTests.Mock;
@@ -13,6 +15,7 @@ using Bicep.Local.Extension.Protocol;
 using Bicep.Local.Extension.Rpc;
 using FluentAssertions;
 using Grpc.Core;
+using Grpc.Net.Client;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Microsoft.WindowsAzure.ResourceStack.Common.Json;
 using Moq;
@@ -27,10 +30,14 @@ namespace Bicep.Local.Deploy.IntegrationTests;
 [TestClass]
 public class ProviderExtensionTests : TestBase
 {
-    private async Task RunExtensionTest(Action<ResourceDispatcherBuilder> registerHandlers, Func<BicepExtension.BicepExtensionClient, CancellationToken, Task> testFunc)
+    public enum ChannelMode
     {
-        var socketPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.tmp");
+        UnixDomainSocket,
+        NamedPipe,
+    }
 
+    private async Task RunExtensionTest(string[] processArgs, Func<GrpcChannel> channelBuilder, Action<ResourceDispatcherBuilder> registerHandlers, Func<BicepExtension.BicepExtensionClient, CancellationToken, Task> testFunc)
+    {
         var testTimeout = TimeSpan.FromMinutes(1);
         var cts = new CancellationTokenSource(testTimeout);
 
@@ -39,14 +46,13 @@ public class ProviderExtensionTests : TestBase
             {
                 var extension = new KestrelProviderExtension();
 
-                await extension.RunAsync(["--socket", socketPath], registerHandlers, cts.Token);
+                await extension.RunAsync(processArgs, registerHandlers, cts.Token);
             }),
             Task.Run(async () =>
             {
                 try
                 {
-                    var channel = GrpcChannelHelper.CreateChannel(socketPath);
-                    var client = new BicepExtension.BicepExtensionClient(channel);
+                    var client = new BicepExtension.BicepExtensionClient(channelBuilder());
 
                     await GrpcChannelHelper.WaitForConnectionAsync(client, cts.Token);
 
@@ -59,9 +65,50 @@ public class ProviderExtensionTests : TestBase
             }, cts.Token));
     }
 
-    [TestMethod]
-    public async Task Save_request_works_as_expected()
+    private async Task RunExtensionTest(Func<Mock<IGenericResourceHandler>, BicepExtension.BicepExtensionClient, CancellationToken, Task> testFunc)
     {
+        var socketPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.tmp");
+        var mockHandler = StrictMock.Of<IGenericResourceHandler>();
+
+        await RunExtensionTest(
+            ["--socket", socketPath],
+            () => GrpcChannelHelper.CreateDomainSocketChannel(socketPath),
+            builder => builder.AddGenericHandler(mockHandler.Object),
+            (client, token) => testFunc(mockHandler, client, token));
+    }
+
+    private static IEnumerable<object[]> GetDataSets()
+    {
+        yield return new object[] { ChannelMode.UnixDomainSocket };
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            // Kestrel only supports named pipes on Windows
+            yield return new object[] { ChannelMode.NamedPipe };
+        }
+    }
+
+    [TestMethod]
+    [DynamicData(nameof(GetDataSets), DynamicDataSourceType.Method)]
+    public async Task Save_request_works_as_expected(ChannelMode mode)
+    {
+        string[] processArgs;
+        Func<GrpcChannel> channelBuilder;
+        switch (mode)
+        {
+            case ChannelMode.UnixDomainSocket:
+                var socketPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.tmp");
+                processArgs = ["--socket", socketPath];
+                channelBuilder = () => GrpcChannelHelper.CreateDomainSocketChannel(socketPath);
+                break;
+            case ChannelMode.NamedPipe:
+                var pipeName = $"{Guid.NewGuid()}.tmp";
+                processArgs = ["--pipe", pipeName];
+                channelBuilder = () => GrpcChannelHelper.CreateNamedPipeChannel(pipeName);
+                break;
+            default:
+                throw new NotImplementedException();
+        }
+
         JsonObject identifiers = new()
                 {
                     { "name", "someName" },
@@ -70,14 +117,13 @@ public class ProviderExtensionTests : TestBase
 
         var handlerMock = StrictMock.Of<IResourceHandler>();
         handlerMock.SetupGet(x => x.ResourceType).Returns("apps/Deployment");
-
-        handlerMock.Setup(x => x.CreateOrUpdate(It.IsAny<Protocol.ResourceSpecification>(), It.IsAny<CancellationToken>()))
-            .Returns<Protocol.ResourceSpecification, CancellationToken>((req, _) =>
-                Task.FromResult(new Protocol.LocalExtensibilityOperationResponse(
-                    new Protocol.Resource(req.Type, req.ApiVersion, "Succeeded", identifiers, req.Config, req.Properties),
-                    null)));
+        handlerMock.SetupCreateOrUpdate(req => new(
+                new(req.Type, req.ApiVersion, "Succeeded", identifiers, req.Config, req.Properties),
+                null));
 
         await RunExtensionTest(
+            processArgs,
+            channelBuilder,
             builder => builder.AddHandler(handlerMock.Object),
             async (client, token) =>
             {
@@ -148,4 +194,27 @@ public class ProviderExtensionTests : TestBase
                 responseIdentifiers["namespace"]!.GetValue<string>().Should().Be(identifiers["namespace"]!.GetValue<string>());
             });
     }
+
+    [TestMethod]
+    public Task Error_details_and_inner_error_can_be_null() => RunExtensionTest(async (handlerMock, client, token) =>
+    {
+        Protocol.Error error = new("SomeErrorCode", "SomeTarget", "SomeMessage", null, null);
+        handlerMock.SetupCreateOrUpdate(req => new(null, new(error)));
+
+        var response = await client.CreateOrUpdateAsync(new()
+        {
+            Type = "mockResource",
+            Properties = """
+{}
+""",
+        }, cancellationToken: token);
+
+        response.Should().NotBeNull();
+        response.ErrorData.Should().NotBeNull();
+        response.ErrorData.Error.Code.Should().Be(error.Code);
+        response.ErrorData.Error.Target.Should().Be(error.Target);
+        response.ErrorData.Error.Message.Should().Be(error.Message);
+        response.ErrorData.Error.Details.Should().BeNullOrEmpty();
+        response.ErrorData.Error.InnerError.Should().BeNullOrEmpty();
+    });
 }

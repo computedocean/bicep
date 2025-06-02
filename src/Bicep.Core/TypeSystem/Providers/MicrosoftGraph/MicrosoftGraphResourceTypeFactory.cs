@@ -36,15 +36,20 @@ namespace Bicep.Core.TypeSystem.Providers.MicrosoftGraph
         private ITypeReference GetTypeReference(Azure.Bicep.Types.Concrete.ITypeReference input)
             => new DeferredTypeReference(() => GetTypeSymbol(input.Type, false));
 
-        private TypeProperty GetTypeProperty(string name, Azure.Bicep.Types.Concrete.ObjectTypeProperty input)
+        private NamedTypeProperty GetTypeProperty(string name, Azure.Bicep.Types.Concrete.ObjectTypeProperty input)
         {
-            return new TypeProperty(name, GetTypeReference(input.Type), GetTypePropertyFlags(input), input.Description);
+            return new NamedTypeProperty(name, GetTypeReference(input.Type), GetTypePropertyFlags(input), input.Description);
         }
 
         private static TypePropertyFlags GetTypePropertyFlags(Azure.Bicep.Types.Concrete.ObjectTypeProperty input)
         {
             var flags = TypePropertyFlags.None;
 
+            if (input.Flags.HasFlag(Azure.Bicep.Types.Concrete.ObjectTypePropertyFlags.Identifier))
+            {
+                flags |= TypePropertyFlags.ResourceIdentifier;
+                flags |= TypePropertyFlags.LoopVariant;
+            }
             if (input.Flags.HasFlag(Azure.Bicep.Types.Concrete.ObjectTypePropertyFlags.Required))
             {
                 flags |= TypePropertyFlags.Required;
@@ -83,7 +88,10 @@ namespace Bicep.Core.TypeSystem.Providers.MicrosoftGraph
                 case Azure.Bicep.Types.Concrete.IntegerType @int:
                     return TypeFactory.CreateIntegerType(@int.MinValue, @int.MaxValue);
                 case Azure.Bicep.Types.Concrete.StringType @string:
-                    return TypeFactory.CreateStringType(@string.MinLength, @string.MaxLength);
+                    return TypeFactory.CreateStringType(
+                        @string.MinLength,
+                        @string.MaxLength,
+                        TypeHelper.AsOptionalValidFiniteRegexPattern(@string.Pattern));
                 case Azure.Bicep.Types.Concrete.BuiltInType builtInType:
                     return builtInType.Kind switch
                     {
@@ -104,7 +112,7 @@ namespace Bicep.Core.TypeSystem.Providers.MicrosoftGraph
                         var additionalProperties = objectType.AdditionalProperties != null ? GetTypeReference(objectType.AdditionalProperties) : null;
                         var properties = objectType.Properties.Select(kvp => GetTypeProperty(kvp.Key, kvp.Value));
 
-                        return new ObjectType(objectType.Name, GetValidationFlags(isResourceBodyType), properties, additionalProperties, TypePropertyFlags.None);
+                        return new ObjectType(objectType.Name, GetValidationFlags(isResourceBodyType), properties, additionalProperties is not null ? new(additionalProperties) : null);
                     }
                 case Azure.Bicep.Types.Concrete.ArrayType arrayType:
                     {
@@ -142,19 +150,20 @@ namespace Bicep.Core.TypeSystem.Providers.MicrosoftGraph
                 extendedProperties[property.Key] = property.Value;
             }
 
-            return new ObjectType(name, GetValidationFlags(isResourceBodyType), extendedProperties.Select(kvp => GetTypeProperty(kvp.Key, kvp.Value)), additionalProperties, TypePropertyFlags.None);
+            return new ObjectType(name, GetValidationFlags(isResourceBodyType), extendedProperties.Select(kvp => GetTypeProperty(kvp.Key, kvp.Value)), additionalProperties is null ? null : new(additionalProperties));
         }
 
         private static TypeSymbolValidationFlags GetValidationFlags(bool isResourceBodyType)
         {
+            var flags = TypeSymbolValidationFlags.WarnOnPropertyTypeMismatch;
             if (isResourceBodyType)
             {
                 // strict validation on top-level resource properties, as 'custom' top-level properties are not supported by the platform
-                return TypeSymbolValidationFlags.Default;
+                return flags | TypeSymbolValidationFlags.Default;
             }
 
             // in all other places, we should allow some wiggle room so that we don't block compilation if there are any swagger inaccuracies
-            return TypeSymbolValidationFlags.WarnOnTypeMismatch;
+            return flags | TypeSymbolValidationFlags.WarnOnTypeMismatch;
         }
 
         private static ResourceFlags ToResourceFlags(Azure.Bicep.Types.Concrete.ResourceFlags input)

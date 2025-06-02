@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using Bicep.Core.Extensions;
 using Bicep.Core.Parsing;
+using Bicep.Core.Text;
 using JetBrains.Annotations;
 
 namespace Bicep.Core.Syntax
@@ -85,6 +86,6 @@ namespace Bicep.Core.Syntax
         /// </summary>
         public override string ToString() => SyntaxStringifier.Stringify(this);
 
-        public string GetDebuggerDisplay() => ToString();
+        public string GetDebuggerDisplay() => $"[{GetType().Name}] {ToString()}";
     }
 }

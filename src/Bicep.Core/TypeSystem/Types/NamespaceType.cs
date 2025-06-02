@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+
 using Bicep.Core.Registry;
-using Bicep.Core.Registry.Oci;
 using Bicep.Core.Semantics;
 using Bicep.Core.TypeSystem.Providers;
 
@@ -19,13 +19,13 @@ namespace Bicep.Core.TypeSystem.Types
         public NamespaceType(
             string aliasName,
             NamespaceSettings settings,
-            IEnumerable<TypeProperty> properties,
+            IEnumerable<NamedTypeProperty> properties,
             IEnumerable<FunctionOverload> functionOverloads,
             IEnumerable<BannedFunction> bannedFunctions,
             IEnumerable<Decorator> decorators,
             IResourceTypeProvider resourceTypeProvider,
             ArtifactReference? artifact = null)
-            : base(aliasName, TypeSymbolValidationFlags.PreventAssignment, properties, null, TypePropertyFlags.None, obj => new FunctionResolver(obj, functionOverloads, bannedFunctions))
+            : base(aliasName, TypeSymbolValidationFlags.PreventAssignment, properties, null, obj => new FunctionResolver(obj, functionOverloads, bannedFunctions))
         {
             Settings = settings;
             ResourceTypeProvider = resourceTypeProvider;
@@ -45,6 +45,10 @@ namespace Bicep.Core.TypeSystem.Types
 
         public string ExtensionName => Settings.BicepExtensionName;
 
+        public string ExtensionVersion => Settings.TemplateExtensionVersion;
+
         public ObjectType? ConfigurationType => Settings.ConfigurationType;
+
+        public bool IsConfigurationRequired => ConfigurationType?.Properties.Values.Any(p => p.Flags.HasFlag(TypePropertyFlags.Required)) is true;
     }
 }

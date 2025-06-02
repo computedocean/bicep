@@ -1,15 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
-using System.Collections.Generic;
-using System.Collections.Immutable;
-using System.ComponentModel;
 using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Azure.Deployments.Core.Constants;
 using Azure.Deployments.Core.Definitions.Schema;
 using Azure.Deployments.Core.Entities;
 using Azure.Deployments.Expression.Intermediate;
@@ -50,7 +42,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
         {
             foreach (var module in model.Root.ModuleDeclarations)
             {
-                if (module.DeclaringSyntax is ModuleDeclarationSyntax moduleSyntax &&  module.TryGetSemanticModel().IsSuccess(out var moduleSemanticModel) && moduleSemanticModel is SemanticModel semanticModel)
+                if (module.DeclaringSyntax is ModuleDeclarationSyntax moduleSyntax && module.TryGetSemanticModel().IsSuccess(out var moduleSemanticModel) && moduleSemanticModel is SemanticModel semanticModel)
                 {
                     var moduleParamsPropertyObject = moduleSyntax.TryGetBody()?
                                     .TryGetPropertyByName(LanguageConstants.ModuleParamsPropertyName);
@@ -64,7 +56,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
                     var moduleParamsHolder = new Dictionary<string, ObjectPropertySyntax>();
                     foreach (var param in moduleParams)
                     {
-                        moduleParamsInput.Add(param.Key.ToString(), new FunctionExpression("sentinel-placeholder", ImmutableArray.Create<ITemplateLanguageExpression>(new StringExpression(param.Key.ToString(), null, null, null)), ImmutableArray<ITemplateLanguageExpression>.Empty, null, null, null));
+                        moduleParamsInput.Add(param.Key.ToString(), new FunctionExpression("sentinel-placeholder", [new StringExpression(param.Key.ToString(), null, null, null)], [], position: null));
                         moduleParamsHolder.Add(param.Key.ToString(), param);
                     }
 
@@ -89,12 +81,11 @@ namespace Bicep.Core.Analyzers.Linter.Rules
                             subscriptionId: new UnevaluableExpression(null, null, null),
                             resourceGroupName: new UnevaluableExpression(null, null, null),
                             template: template,
-                            apiVersion: new StringExpression(EmitConstants.NestedDeploymentResourceApiVersion, null, null, null),
+                            apiVersion: new StringExpression(EmitConstants.GetNestedDeploymentResourceApiVersion(model.Features), null, null, null),
                             suppliedParameterValues: moduleParamsInput,
                             parameterValuesPositionalMetadata: null,
                             metadata: metadata,
-                            metricsRecorder: null,
-                            skipEvaluationOfNonDeterministicFunctionsForWhatIf: false);
+                            metricsRecorder: null);
                     }
                     catch (Exception ex)
                     {
@@ -127,7 +118,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
         private static bool IsDeployTimeConstant(ObjectPropertySyntax syntax, SemanticModel model, ResourceTypeResolver resolver)
         {
             var diagWriter = ToListDiagnosticWriter.Create();
-            DeployTimeConstantValidator.CheckDeployTimeConstantViolations(syntax, syntax.Value, model, diagWriter, resolver); 
+            DeployTimeConstantValidator.CheckDeployTimeConstantViolations(syntax, syntax.Value, model, diagWriter, resolver);
 
             return diagWriter.GetDiagnostics().Count == 0;
         }
@@ -167,7 +158,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
             }
             catch (Exception ex)
             {
-                Trace.WriteLine($"Failed to generate template for {model.Root.FileUri}: {ex}");
+                Trace.WriteLine($"Failed to generate template for {model.SourceFile.FileHandle.Uri}: {ex}");
                 return new Template();
             }
         }

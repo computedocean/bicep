@@ -2,13 +2,20 @@
 // Licensed under the MIT License.
 
 using System.Diagnostics.CodeAnalysis;
+using Bicep.Core.Diagnostics;
+using Bicep.Core.Extensions;
 using Bicep.Core.Features;
 using Bicep.Core.Registry;
 using Bicep.Core.Registry.Oci;
-using Bicep.Core.SourceCode;
+using Bicep.Core.SourceGraph;
+using Bicep.Core.SourceLink;
+using Bicep.Core.Syntax;
+using Bicep.Core.Text;
 using Bicep.Core.UnitTests.Assertions;
+using Bicep.Core.UnitTests.FileSystem;
 using Bicep.Core.UnitTests.Mock;
 using Bicep.Core.UnitTests.Utils;
+using Bicep.IO.Abstraction;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OmniSharp.Extensions.LanguageServer.Protocol;
@@ -572,9 +579,9 @@ namespace Bicep.Core.UnitTests.Registry
             string registry = "myregistry.azurecr.io";
             string repository = "bicep/myrepo";
 
-            var moduleReference = CreateModuleReference(registry, repository, "v1", null);
+            var (ociRegistry, blobClient, bicepFile) = CreateModuleRegistryAndBicepFile(null);
 
-            var (ociRegistry, blobClient, _) = CreateModuleRegistryAndBicepFile(null);
+            var moduleReference = CreateModuleReference(bicepFile, registry, repository, "v1", null);
 
             var template = BinaryData.FromString(jsonContentsV1);
             var sources = publishSource ? BinaryData.FromString("This is a test. This is only a test. If this were a real source archive, it would have been binary.") : null;
@@ -607,10 +614,9 @@ namespace Bicep.Core.UnitTests.Registry
         {
             string registry = "myregistry.azurecr.io";
             string repository = "bicep/myrepo";
-            var moduleReferenceV1 = CreateModuleReference(registry, repository, "v1", null);
-            var moduleReferenceV2 = CreateModuleReference(registry, repository, "v2", null);
-
-            var (ociRegistry, blobClient, _) = CreateModuleRegistryAndBicepFile(null);
+            var (ociRegistry, blobClient, bicepFile) = CreateModuleRegistryAndBicepFile(null);
+            var moduleReferenceV1 = CreateModuleReference(bicepFile, registry, repository, "v1", null);
+            var moduleReferenceV2 = CreateModuleReference(bicepFile, registry, repository, "v2", null);
 
             var templateV1 = BinaryData.FromString(jsonContentsV1);
             var sourcesV1 = sourceContentsV1 == null ? null : BinaryData.FromString(sourceContentsV1);
@@ -651,19 +657,24 @@ namespace Bicep.Core.UnitTests.Registry
             string registry = "myregistry.azurecr.io";
             string repository = "bicep/myrepo";
 
-            var moduleReference = CreateModuleReference(registry, repository, "v1", null);
+            var (ociRegistry, blobClient, bicepFile) = CreateModuleRegistryAndBicepFile(null);
 
-            var (ociRegistry, blobClient, _) = CreateModuleRegistryAndBicepFile(null);
+            var moduleReference = CreateModuleReference(bicepFile, registry, repository, "v1", null);
 
             var template = BinaryData.FromString(jsonContentsV1);
+
+            var featureProviderFactoryMock = StrictMock.Of<IFeatureProviderFactory>();
+            featureProviderFactoryMock.Setup(x => x.GetFeatureProvider(bicepFile.Uri)).Returns(bicepFile.Features);
 
             BinaryData? sources = null;
             if (publishSource)
             {
-                var uri = new Uri("file://path/to/bicep.bicep", UriKind.Absolute);
-                sources = new SourceArchiveBuilder()
+                var uri = InMemoryFileResolver.GetFileUri("/path/to/bicep.bicep");
+                var sourceFileFactory = new SourceFileFactory(BicepTestConstants.ConfigurationManager, featureProviderFactoryMock.Object, BicepTestConstants.AuxiliaryFileCache, BicepTestConstants.FileExplorer);
+                sources = new SourceArchiveBuilder(sourceFileFactory)
                     .WithBicepFile(uri, "// contents")
-                    .BuildBinaryData();
+                    .Build()
+                    .PackIntoBinaryData();
             }
 
             await ociRegistry.PublishModule(moduleReference, template, sources, "http://documentation", "description");
@@ -679,12 +690,19 @@ namespace Bicep.Core.UnitTests.Registry
 
             await RestoreModule(ociRegistry, moduleReference);
 
-            ociRegistry.Should().HaveValidCachedModules(withSource: publishSource);
-            var actualSourceResult = ociRegistry.TryGetSource(moduleReference);
+            var modules = CachedModules.GetCachedModules(BicepTestConstants.FileSystem, bicepFile.Features.CacheRootDirectory);
+            modules.Should().HaveCountGreaterThan(0);
+
+            if (publishSource)
+            {
+                modules.Should().AllSatisfy(m => m.HasSourceLayer.Should().Be(publishSource));
+            }
+
+            var actualSourceResult = moduleReference.TryLoadSourceArchive();
 
             if (sources is { })
             {
-                actualSourceResult.UnwrapOrThrow().Should().BeEquivalentTo(SourceArchive.UnpackFromStream(sources.ToStream()).UnwrapOrThrow());
+                actualSourceResult.UnwrapOrThrow().Should().HaveData(sources);
             }
             else
             {
@@ -701,7 +719,7 @@ namespace Bicep.Core.UnitTests.Registry
             var (_, failureBuilder) = (await ociRegistry.RestoreArtifacts(new[] { reference })).SingleOrDefault();
             if (failureBuilder is { })
             {
-                var builder = new DiagnosticBuilderInternal(new Core.Parsing.TextSpan());
+                var builder = new DiagnosticBuilderInternal(new TextSpan());
                 var diagnostic = failureBuilder(builder);
                 if (diagnostic is { })
                 {
@@ -710,29 +728,39 @@ namespace Bicep.Core.UnitTests.Registry
             }
         }
 
-        private OciArtifactReference CreateModuleReference(string registry, string repository, string? tag, string? digest)
+        private OciArtifactReference CreateModuleReference(BicepSourceFile referencingFile, string registry, string repository, string? tag, string? digest)
         {
-            OciArtifactReference.TryParse(ArtifactType.Module, null, $"{registry}/{repository}:{tag}", BicepTestConstants.BuiltInConfiguration, new Uri("file:///main.bicep")).IsSuccess(out var moduleReference).Should().BeTrue();
+            OciArtifactReference.TryParse(referencingFile, ArtifactType.Module, null, $"{registry}/{repository}:{tag}").IsSuccess(out var moduleReference).Should().BeTrue();
             return moduleReference!;
         }
 
-        // Creates a new (real) OciArtifactRegistry instance with an empty on-disk cache that can push and pull modules
-        private (OciArtifactRegistry, MockRegistryBlobClient) CreateModuleRegistry(
-            Uri parentModuleUri,
-            string cacheRootDirectory)
-        {
-            return OciRegistryHelper.CreateModuleRegistry(parentModuleUri, GetFeatures(cacheRootDirectory));
-        }
-
-        private (OciArtifactRegistry, MockRegistryBlobClient, Uri parentModuleUri) CreateModuleRegistryAndBicepFile(
+        private (OciArtifactRegistry, FakeRegistryBlobClient, BicepFile parentModuleFile) CreateModuleRegistryAndBicepFile(
             string? parentBicepFileContents // The bicep file which references a module
         )
         {
             var bicepPath = FileHelper.SaveResultFile(TestContext, "input.bicep", parentBicepFileContents ?? "", TestOutputPath);
-            var parentModuleUri = DocumentUri.FromFileSystemPath(bicepPath).ToUriEncoded();
+            var parentModuleUri = new Uri(bicepPath);
 
-            var (registry, blobClient) = CreateModuleRegistry(parentModuleUri, TestOutputPath);
-            return (registry, blobClient, parentModuleUri);
+            var featureProviderMock = StrictMock.Of<IFeatureProvider>();
+            var cacheRootDirectory = BicepTestConstants.FileExplorer.GetDirectory(IOUri.FromLocalFilePath(TestOutputPath));
+            featureProviderMock.Setup(m => m.CacheRootDirectory).Returns(cacheRootDirectory);
+
+            var featureProviderFactoryMock = StrictMock.Of<IFeatureProviderFactory>();
+            featureProviderFactoryMock.Setup(m => m.GetFeatureProvider(parentModuleUri)).Returns(featureProviderMock.Object);
+
+            var parentModuleFile = new BicepFile(
+                parentModuleUri,
+                BicepTestConstants.FileExplorer.GetFile(parentModuleUri.ToIOUri()),
+                [],
+                SyntaxFactory.EmptyProgram,
+                BicepTestConstants.ConfigurationManager,
+                featureProviderFactoryMock.Object,
+                BicepTestConstants.AuxiliaryFileCache,
+                EmptyDiagnosticLookup.Instance,
+                EmptyDiagnosticLookup.Instance);
+
+            var (registry, blobClient) = OciRegistryHelper.CreateModuleRegistry();
+            return (registry, blobClient, parentModuleFile);
         }
 
         // Creates a new (real) OciArtifactRegistry and sets it up so that it has an on-disk cached module
@@ -746,16 +774,16 @@ namespace Bicep.Core.UnitTests.Registry
             string? digest = null,
             string? tag = null)
         {
-            var (OciArtifactRegistry, _, parentModuleUri) = CreateModuleRegistryAndBicepFile(parentBicepFileContents);
+            var (OciArtifactRegistry, _, parentModuleFile) = CreateModuleRegistryAndBicepFile(parentBicepFileContents);
 
             OciArtifactReference? OciArtifactReference = OciRegistryHelper.CreateModuleReferenceMock(
+                parentModuleFile,
                 registry,
                 repository,
-                parentModuleUri,
                 digest,
                 tag);
 
-            if (manifestFileContents is string)
+            if (manifestFileContents is not null)
             {
                 OciRegistryHelper.SaveManifestFileToModuleRegistryCache(
                     TestContext,
@@ -769,16 +797,6 @@ namespace Bicep.Core.UnitTests.Registry
 
             return (OciArtifactRegistry, OciArtifactReference);
         }
-
-        private IFeatureProvider GetFeatures(string cacheRootDirectory)
-        {
-            var features = StrictMock.Of<IFeatureProvider>();
-
-            features.Setup(m => m.CacheRootDirectory).Returns(cacheRootDirectory);
-
-            return features.Object;
-        }
-
         #endregion Helpers
     }
 }

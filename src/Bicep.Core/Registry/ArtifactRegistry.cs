@@ -4,7 +4,8 @@
 using System.Reflection;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Semantics;
-using Bicep.Core.SourceCode;
+using Bicep.Core.SourceGraph;
+using Bicep.Core.SourceLink;
 using Bicep.Core.Utils;
 
 namespace Bicep.Core.Registry
@@ -35,13 +36,11 @@ namespace Bicep.Core.Registry
 
         public abstract ResultWithDiagnosticBuilder<Uri> TryGetLocalArtifactEntryPointUri(T reference);
 
-        public abstract ResultWithDiagnosticBuilder<ArtifactReference> TryParseArtifactReference(ArtifactType artifactType, string? aliasName, string reference);
+        public abstract ResultWithDiagnosticBuilder<ArtifactReference> TryParseArtifactReference(BicepSourceFile referencingFile, ArtifactType artifactType, string? aliasName, string reference);
 
         public abstract string? TryGetDocumentationUri(T reference);
 
         public abstract Task<string?> TryGetModuleDescription(ModuleSymbol module, T reference);
-
-        public abstract ResultWithException<SourceArchive> TryGetSource(T reference);
 
         public bool IsArtifactRestoreRequired(ArtifactReference reference) => this.IsArtifactRestoreRequired(ConvertReference(reference));
 
@@ -67,8 +66,6 @@ namespace Bicep.Core.Registry
 
         public async Task<string?> TryGetModuleDescription(ModuleSymbol module, ArtifactReference reference) =>
             await this.TryGetModuleDescription(module, ConvertReference(reference));
-
-        public ResultWithException<SourceArchive> TryGetSource(ArtifactReference reference) => this.TryGetSource(ConvertReference(reference));
 
         public abstract Uri? TryGetExtensionBinary(T reference);
 

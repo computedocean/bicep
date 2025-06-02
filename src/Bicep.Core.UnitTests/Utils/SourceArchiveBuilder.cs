@@ -4,10 +4,10 @@
 using System.Diagnostics;
 using Bicep.Core.FileSystem;
 using Bicep.Core.Registry;
-using Bicep.Core.SourceCode;
-using Bicep.Core.Workspaces;
+using Bicep.Core.SourceGraph;
+using Bicep.Core.SourceLink;
 using FluentAssertions;
-using static Bicep.Core.SourceCode.SourceArchive;
+using static Bicep.Core.SourceLink.SourceArchive;
 
 namespace Bicep.Core.UnitTests.Utils
 {
@@ -19,22 +19,21 @@ namespace Bicep.Core.UnitTests.Utils
         private static string Rooted(string path) => $"/{path}";
 #endif
 
-        private string? cacheRoot = null;
+        private readonly ISourceFileFactory sourceFileFactory;
 
         // First will be entrypoint, must be a bicep file
         private List<ISourceFile> SourceFiles = new();
 
         private ISourceFile EntrypointFile => SourceFiles[0];
 
-        public SourceArchiveBuilder WithCacheRoot(string cacheRoot)
+        public SourceArchiveBuilder(ISourceFileFactory sourceFileFactory)
         {
-            this.cacheRoot = cacheRoot;
-            return this;
+            this.sourceFileFactory = sourceFileFactory;
         }
 
         public SourceArchiveBuilder WithBicepFile(Uri fileUri, string contents)
         {
-            SourceFiles.Add(SourceFileFactory.CreateBicepFile(fileUri, contents));
+            SourceFiles.Add(this.sourceFileFactory.CreateBicepFile(fileUri, contents));
             return this;
         }
 
@@ -46,12 +45,6 @@ namespace Bicep.Core.UnitTests.Utils
 
         public SourceArchive Build()
         {
-            var stream = BuildStream();
-            return SourceArchive.UnpackFromStream(stream).UnwrapOrThrow();
-        }
-
-        public Stream BuildStream()
-        {
             if (SourceFiles.Count == 0)
             {
                 // Add a default entrypoint
@@ -60,15 +53,11 @@ namespace Bicep.Core.UnitTests.Utils
 
             SourceFiles[0].Should().BeOfType<BicepFile>("Entrypoint should be a bicep file");
 
-            return SourceArchive.PackSourcesIntoStream(
-                EntrypointFile.FileUri,
-                cacheRoot,
-                SourceFiles.Select(x => new SourceFileWithArtifactReference(x, null)).ToArray());
-        }
-
-        public BinaryData BuildBinaryData()
-        {
-            return BinaryData.FromStream(BuildStream());
+            return SourceArchive.CreateFor(
+                EntrypointFile.Uri,
+                null,
+                null,
+                [.. SourceFiles.Select(x => new SourceFileWithArtifactReference(x, null))]);
         }
     }
 }

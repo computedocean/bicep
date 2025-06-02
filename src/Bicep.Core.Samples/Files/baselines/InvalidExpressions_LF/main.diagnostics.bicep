@@ -295,6 +295,7 @@ param funcvarparam bool = concat
 //@[06:18) [no-unused-params (Warning)] Parameter "funcvarparam" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-params) |funcvarparam|
 //@[26:32) [BCP063 (Error)] The name "concat" is not a parameter, variable, resource or module. (bicep https://aka.ms/bicep/core-diagnostics#BCP063) |concat|
 output funcvarout array = padLeft
+//@[18:23) [use-user-defined-types (Warning)] Use user-defined types instead of 'object' or 'array'. (bicep core linter https://aka.ms/bicep/linter/use-user-defined-types) |array|
 //@[26:33) [BCP063 (Error)] The name "padLeft" is not a parameter, variable, resource or module. (bicep https://aka.ms/bicep/core-diagnostics#BCP063) |padLeft|
 
 // non-existent function
@@ -447,7 +448,7 @@ var invalidPropertyAccessOnAzNamespace = az.az
 //@[44:46) [BCP052 (Error)] The type "az" does not contain property "az". (bicep https://aka.ms/bicep/core-diagnostics#BCP052) |az|
 var invalidPropertyAccessOnSysNamespace = sys.az
 //@[04:39) [no-unused-vars (Warning)] Variable "invalidPropertyAccessOnSysNamespace" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |invalidPropertyAccessOnSysNamespace|
-//@[46:48) [BCP053 (Error)] The type "sys" does not contain property "az". Available properties include "array", "bool", "int", "object", "string". (bicep https://aka.ms/bicep/core-diagnostics#BCP053) |az|
+//@[46:48) [BCP053 (Error)] The type "sys" does not contain property "az". Available properties include "array", "bool", "int", "object", "resourceInput", "resourceOutput", "string". (bicep https://aka.ms/bicep/core-diagnostics#BCP053) |az|
 var invalidOperands = 1 + az
 //@[04:19) [no-unused-vars (Warning)] Variable "invalidOperands" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |invalidOperands|
 //@[22:28) [BCP045 (Error)] Cannot apply operator "+" to operands of type "1" and "az". (bicep https://aka.ms/bicep/core-diagnostics#BCP045) |1 + az|
@@ -494,12 +495,12 @@ var azFunctions = az.a
 // #completionTest(24) -> sysFunctions
 var sysFunctions = sys.a
 //@[04:16) [no-unused-vars (Warning)] Variable "sysFunctions" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |sysFunctions|
-//@[23:24) [BCP053 (Error)] The type "sys" does not contain property "a". Available properties include "array", "bool", "int", "object", "string". (bicep https://aka.ms/bicep/core-diagnostics#BCP053) |a|
+//@[23:24) [BCP053 (Error)] The type "sys" does not contain property "a". Available properties include "array", "bool", "int", "object", "resourceInput", "resourceOutput", "string". (bicep https://aka.ms/bicep/core-diagnostics#BCP053) |a|
 
 // #completionTest(33) -> sysFunctions
 var sysFunctionsInParens = (sys.a)
 //@[04:24) [no-unused-vars (Warning)] Variable "sysFunctionsInParens" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |sysFunctionsInParens|
-//@[32:33) [BCP053 (Error)] The type "sys" does not contain property "a". Available properties include "array", "bool", "int", "object", "string". (bicep https://aka.ms/bicep/core-diagnostics#BCP053) |a|
+//@[32:33) [BCP053 (Error)] The type "sys" does not contain property "a". Available properties include "array", "bool", "int", "object", "resourceInput", "resourceOutput", "string". (bicep https://aka.ms/bicep/core-diagnostics#BCP053) |a|
 
 // missing method name
 var missingMethodName = az.()
@@ -585,11 +586,44 @@ var partialObject = {
 //@[07:08) [BCP009 (Error)] Expected a literal value, an array, an object, a parenthesized expression, or a function call at this location. (bicep https://aka.ms/bicep/core-diagnostics#BCP009) |%|
 }
 
+//nameof expressions
+var nameOfConstant = nameof('abc')
+//@[04:18) [no-unused-vars (Warning)] Variable "nameOfConstant" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |nameOfConstant|
+//@[28:33) [BCP408 (Error)] The "nameof" function can only be used with an expression which has a name. (bicep https://aka.ms/bicep/core-diagnostics#BCP408) |'abc'|
+var nameOfKeyword1 = nameof(param)
+//@[04:18) [no-unused-vars (Warning)] Variable "nameOfKeyword1" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |nameOfKeyword1|
+//@[28:33) [BCP057 (Error)] The name "param" does not exist in the current context. (bicep https://aka.ms/bicep/core-diagnostics#BCP057) |param|
+var nameOfKeyword2 = nameof(var)
+//@[04:18) [no-unused-vars (Warning)] Variable "nameOfKeyword2" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |nameOfKeyword2|
+//@[28:31) [BCP057 (Error)] The name "var" does not exist in the current context. (bicep https://aka.ms/bicep/core-diagnostics#BCP057) |var|
+var nameOfKeyword3 = nameof(resource)
+//@[04:18) [no-unused-vars (Warning)] Variable "nameOfKeyword3" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |nameOfKeyword3|
+//@[28:36) [BCP057 (Error)] The name "resource" does not exist in the current context. (bicep https://aka.ms/bicep/core-diagnostics#BCP057) |resource|
+var nameOfKeyword4 = nameof(module)
+//@[04:18) [no-unused-vars (Warning)] Variable "nameOfKeyword4" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |nameOfKeyword4|
+//@[28:34) [BCP057 (Error)] The name "module" does not exist in the current context. (bicep https://aka.ms/bicep/core-diagnostics#BCP057) |module|
+var nameOfKeyword5 = nameof(output)
+//@[04:18) [no-unused-vars (Warning)] Variable "nameOfKeyword5" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |nameOfKeyword5|
+//@[28:34) [BCP057 (Error)] The name "output" does not exist in the current context. (bicep https://aka.ms/bicep/core-diagnostics#BCP057) |output|
+var nameofExpression1 = nameof(1 + 2)
+//@[04:21) [no-unused-vars (Warning)] Variable "nameofExpression1" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |nameofExpression1|
+//@[31:36) [BCP408 (Error)] The "nameof" function can only be used with an expression which has a name. (bicep https://aka.ms/bicep/core-diagnostics#BCP408) |1 + 2|
+var nameofVar= 'abc'
+var nameofExpression2 = nameof(true ? nameofVar : nameofVar)
+//@[04:21) [no-unused-vars (Warning)] Variable "nameofExpression2" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |nameofExpression2|
+//@[31:59) [BCP408 (Error)] The "nameof" function can only be used with an expression which has a name. (bicep https://aka.ms/bicep/core-diagnostics#BCP408) |true ? nameofVar : nameofVar|
+var nameofUnknown = nameof(symbolNotFound)
+//@[04:17) [no-unused-vars (Warning)] Variable "nameofUnknown" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |nameofUnknown|
+//@[27:41) [BCP057 (Error)] The name "symbolNotFound" does not exist in the current context. (bicep https://aka.ms/bicep/core-diagnostics#BCP057) |symbolNotFound|
+var nameofEmpty = nameof()
+//@[04:15) [no-unused-vars (Warning)] Variable "nameofEmpty" is declared but never used. (bicep core linter https://aka.ms/bicep/linter/no-unused-vars) |nameofEmpty|
+//@[24:26) [BCP071 (Error)] Expected 1 argument, but got 0. (bicep https://aka.ms/bicep/core-diagnostics#BCP071) |()|
+
 // dangling decorators - to make sure the tests work, please do not add contents after this line
 @concat()
 //@[01:07) [BCP152 (Error)] Function "concat" cannot be used as a decorator. (bicep https://aka.ms/bicep/core-diagnostics#BCP152) |concat|
 @sys.secure()
-//@[00:13) [BCP290 (Error)] Expected a parameter or type declaration after the decorator. (bicep https://aka.ms/bicep/core-diagnostics#BCP290) |@sys.secure()|
+//@[00:13) [BCP292 (Error)] Expected a parameter, output, or type declaration after the decorator. (bicep https://aka.ms/bicep/core-diagnostics#BCP292) |@sys.secure()|
 xxxxx
 //@[00:05) [BCP007 (Error)] This declaration type is not recognized. Specify a metadata, parameter, variable, resource, or output declaration. (bicep https://aka.ms/bicep/core-diagnostics#BCP007) |xxxxx|
 
@@ -617,7 +651,5 @@ var unterminated2 = (,
 @minLength()
 //@[00:12) [BCP292 (Error)] Expected a parameter, output, or type declaration after the decorator. (bicep https://aka.ms/bicep/core-diagnostics#BCP292) |@minLength()|
 //@[10:12) [BCP071 (Error)] Expected 1 argument, but got 0. (bicep https://aka.ms/bicep/core-diagnostics#BCP071) |()|
-
-
 
 
