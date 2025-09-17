@@ -16,6 +16,8 @@ using Bicep.Core.Registry.Oci;
 using Bicep.Core.Samples;
 using Bicep.Core.SourceGraph;
 using Bicep.Core.Text;
+using Bicep.Core.TypeSystem;
+using Bicep.Core.TypeSystem.Types;
 using Bicep.Core.UnitTests;
 using Bicep.Core.UnitTests.Assertions;
 using Bicep.Core.UnitTests.FileSystem;
@@ -2929,7 +2931,7 @@ var test = getPath({path:|})
         [TestMethod]
         public async Task Imported_func_usage_param_property_completions_are_offered()
         {
-            var modContent = """              
+            var modContent = """
 type PathExtension = {
 path: string
 }
@@ -3905,7 +3907,8 @@ module foo 'Microsoft.Storage/storageAccounts@2022-09-01' = {
         [DataRow("loadFileAsBase64")]
         [DataRow("loadJsonContent", true)]
         [DataRow("loadYamlContent", false, true)]
-        public async Task LoadFunctionsPathArgument_returnsFilesInCompletions(string functionName, bool jsonOnTop = false, bool ymalOnTop = false)
+        [DataRow("loadDirectoryFileInfo", false, false, true)]
+        public async Task LoadFunctionsPathArgument_returnsFilesInCompletions(string functionName, bool jsonOnTop = false, bool yamlOnTop = false, bool directoryOnTop = false)
         {
             var mainUri = InMemoryFileResolver.GetFileUri("/path/to/main.bicep");
 
@@ -3935,6 +3938,12 @@ var file = " + functionName + @"('|')
                 [InMemoryFileResolver.GetFileUri("/path/to/module1.txt")] = "param foo string",
                 [InMemoryFileResolver.GetFileUri("/path/to/module2.bicep")] = "param bar bool",
                 [InMemoryFileResolver.GetFileUri("/path/to/module3.bicep")] = "",
+                [InMemoryFileResolver.GetFileUri("/path/to/moduleFolder1/module.bicep")] = "",
+                [InMemoryFileResolver.GetFileUri("/path/to/moduleFolder2/module.bicep")] = "",
+                [InMemoryFileResolver.GetFileUri("/path/to/moduleFolder3/module.bicep")] = "",
+                [InMemoryFileResolver.GetFileUri("/path/to/moduleFolder4/module.bicep")] = "",
+                [InMemoryFileResolver.GetFileUri("/path/to/moduleFolder5/module.bicep")] = "",
+                [InMemoryFileResolver.GetFileUri("/path/to/moduleFolder6/module.bicep")] = "",
             };
 
             using var helper = await LanguageServerHelper.StartServerWithText(
@@ -3947,7 +3956,7 @@ var file = " + functionName + @"('|')
 
             var completions = await file.RequestAndResolveCompletions(cursor);
 
-            var completionItems = completions.Where(x => x.Kind == CompletionItemKind.File).OrderBy(x => x.SortText);
+            var completionItems = completions.Where(x => !directoryOnTop ? x.Kind == CompletionItemKind.File : x.Kind == CompletionItemKind.Folder).OrderBy(x => x.SortText);
             if (jsonOnTop)
             {
                 completionItems.Should().SatisfyRespectively(
@@ -3969,7 +3978,7 @@ var file = " + functionName + @"('|')
                     x => x.Label.Should().Be("yaml2.yaml")
                 );
             }
-            else if (ymalOnTop)
+            else if (yamlOnTop)
             {
                 completionItems.Should().SatisfyRespectively(
                     x => x.Label.Should().Be("template6.yaml"),
@@ -3989,6 +3998,20 @@ var file = " + functionName + @"('|')
                     x => x.Label.Should().Be("template4.json"),
                     x => x.Label.Should().Be("template5.json")
                 );
+            }
+            else if (directoryOnTop)
+            {
+                completionItems.Should().SatisfyRespectively(
+                    x => x.Label.Should().Be("../"),
+                    x => x.Label.Should().Be("moduleFolder1/"),
+                        x => x.Label.Should().Be("moduleFolder2/"),
+                        x => x.Label.Should().Be("moduleFolder3/"),
+                        x => x.Label.Should().Be("moduleFolder4/"),
+                        x => x.Label.Should().Be("moduleFolder5/"),
+                        x => x.Label.Should().Be("moduleFolder6/"),
+                        x => x.Label.Should().Be("az"),
+                        x => x.Label.Should().Be("sys")
+                    );
             }
             else
             {
@@ -4018,7 +4041,8 @@ var file = " + functionName + @"('|')
         [DataRow("loadFileAsBase64")]
         [DataRow("loadJsonContent", true)]
         [DataRow("loadYamlContent", false, true)]
-        public async Task LoadFunctionsPathArgument_returnsSymbolsAndFilePathsInCompletions(string functionName, bool jsonOnTop = false, bool ymalOnTop = false)
+        [DataRow("loadDirectoryFileInfo", false, false, true)]
+        public async Task LoadFunctionsPathArgument_returnsSymbolsAndFilePathsInCompletions(string functionName, bool jsonOnTop = false, bool yamlOnTop = false, bool directoryOnTop = false)
         {
             var mainUri = InMemoryFileResolver.GetFileUri("/path/to/main.bicep");
 
@@ -4049,6 +4073,12 @@ var file = " + functionName + @"(templ|)
                 [InMemoryFileResolver.GetFileUri("/path/to/module1.txt")] = "param foo string",
                 [InMemoryFileResolver.GetFileUri("/path/to/module2.bicep")] = "param bar bool",
                 [InMemoryFileResolver.GetFileUri("/path/to/module3.bicep")] = "",
+                [InMemoryFileResolver.GetFileUri("/path/to/moduleFolder1/module.bicep")] = "",
+                [InMemoryFileResolver.GetFileUri("/path/to/moduleFolder2/module.bicep")] = "",
+                [InMemoryFileResolver.GetFileUri("/path/to/moduleFolder3/module.bicep")] = "",
+                [InMemoryFileResolver.GetFileUri("/path/to/moduleFolder4/module.bicep")] = "",
+                [InMemoryFileResolver.GetFileUri("/path/to/moduleFolder5/module.bicep")] = "",
+                [InMemoryFileResolver.GetFileUri("/path/to/moduleFolder6/module.bicep")] = "",
             };
 
             using var helper = await LanguageServerHelper.StartServerWithText(
@@ -4060,7 +4090,8 @@ var file = " + functionName + @"(templ|)
 
             var completions = await file.RequestAndResolveCompletions(cursor);
 
-            var completionItems = completions.OrderBy(x => x.SortText).Where(x => x.Label.StartsWith("templ"));
+            var completionItems = !directoryOnTop ? completions.OrderBy(x => x.SortText).Where(x => x.Label.StartsWith("templ"))
+                    : completions.OrderBy(x => x.SortText).Where(x => x.Label.StartsWith("moduleFol"));
             if (jsonOnTop)
             {
                 completionItems.Should().SatisfyRespectively(
@@ -4076,7 +4107,7 @@ var file = " + functionName + @"(templ|)
                     x => x.Label.Should().Be("template9.yaml")
                 );
             }
-            else if (ymalOnTop)
+            else if (yamlOnTop)
             {
                 completionItems.Should().SatisfyRespectively(
                     x => x.Label.Should().Be("template6.yaml"),
@@ -4090,6 +4121,17 @@ var file = " + functionName + @"(templ|)
                     x => x.Label.Should().Be("template4.json"),
                     x => x.Label.Should().Be("template5.json")
 
+                );
+            }
+            else if (directoryOnTop)
+            {
+                completionItems.Should().SatisfyRespectively(
+                    x => x.Label.Should().Be("moduleFolder1/"),
+                    x => x.Label.Should().Be("moduleFolder2/"),
+                    x => x.Label.Should().Be("moduleFolder3/"),
+                    x => x.Label.Should().Be("moduleFolder4/"),
+                    x => x.Label.Should().Be("moduleFolder5/"),
+                    x => x.Label.Should().Be("moduleFolder6/")
                 );
             }
             else
@@ -4281,7 +4323,6 @@ var file = " + functionName + @"(templ|)
         {
             var extension = kind == BicepSourceFileKind.ParamsFile ? "bicepparam" : "bicep";
             var (fileText, cursor) = ParserHelper.GetFileWithSingleCursor(inputWithCursors, '|');
-            var fileUri = new Uri($"file:///{Guid.NewGuid():D}/{TestContext.TestName}/main.{extension}");
 
             var settingsProvider = StrictMock.Of<ISettingsProvider>();
             settingsProvider.Setup(x => x.GetSetting(LangServerConstants.GetAllAzureContainerRegistriesForCompletionsSetting)).Returns(false);
@@ -4298,17 +4339,18 @@ var file = " + functionName + @"(templ|)
 
             var configurationManager = StrictMock.Of<IConfigurationManager>();
             var moduleAliasesConfiguration = BicepTestConstants.BuiltInConfiguration.With(
-                    moduleAliases: RegistryCatalogMocks.ModuleAliases(
-                        """
-                        {
-                            "br": {
-                                "contoso": {
-                                    "registry": "private.contoso.com"
-                                }
+                moduleAliases: RegistryCatalogMocks.ModuleAliases(
+                    """
+                    {
+                        "br": {
+                            "contoso": {
+                                "registry": "private.contoso.com"
                             }
                         }
-                        """));
-            configurationManager.Setup(x => x.GetConfiguration(fileUri)).Returns(moduleAliasesConfiguration);
+                    }
+                    """));
+            var fileUri = DocumentUri.From($"file:///{Guid.NewGuid():D}/{TestContext.TestName}/main.{extension}");
+            configurationManager.Setup(x => x.GetConfiguration(fileUri.ToIOUri())).Returns(moduleAliasesConfiguration);
 
             using var helper = await MultiFileLanguageServerHelper.StartLanguageServer(
                 TestContext,
@@ -4401,7 +4443,6 @@ var file = " + functionName + @"(templ|)
             var extension = kind == BicepSourceFileKind.ParamsFile ? "bicepparam" : "bicep";
             var (fileText, cursor) = ParserHelper.GetFileWithSingleCursor(text, '|');
             var baseFolder = $"{Guid.NewGuid():D}";
-            var fileUri = new Uri($"file:///{baseFolder}/{TestContext.TestName}/main.{extension}");
 
             var configurationManager = StrictMock.Of<IConfigurationManager>();
             var moduleAliasesConfiguration = BicepTestConstants.BuiltInConfiguration.With(
@@ -4420,7 +4461,8 @@ var file = " + functionName + @"(templ|)
                     }
                     """),
                 null));
-            configurationManager.Setup(x => x.GetConfiguration(fileUri)).Returns(moduleAliasesConfiguration);
+            var fileUri = DocumentUri.From($"file:///{baseFolder}/{TestContext.TestName}/main.{extension}");
+            configurationManager.Setup(x => x.GetConfiguration(fileUri.ToIOUri())).Returns(moduleAliasesConfiguration);
 
             var settingsProvider = StrictMock.Of<ISettingsProvider>();
             settingsProvider.Setup(x => x.GetSetting(LangServerConstants.GetAllAzureContainerRegistriesForCompletionsSetting)).Returns(false);
@@ -4471,7 +4513,6 @@ var file = " + functionName + @"(templ|)
         {
             var (fileText, cursor) = ParserHelper.GetFileWithSingleCursor(text, '|');
             var baseFolder = $"{Guid.NewGuid():D}";
-            var fileUri = new Uri($"file:///{baseFolder}/{TestContext.TestName}/main.bicep");
 
             var configurationManager = StrictMock.Of<IConfigurationManager>();
             var moduleAliasesConfiguration = BicepTestConstants.BuiltInConfiguration.With(
@@ -4494,7 +4535,8 @@ var file = " + functionName + @"(templ|)
                       }
                     """),
                 null));
-            configurationManager.Setup(x => x.GetConfiguration(fileUri)).Returns(moduleAliasesConfiguration);
+            var fileUri = DocumentUri.From($"file:///{baseFolder}/{TestContext.TestName}/main.bicep");
+            configurationManager.Setup(x => x.GetConfiguration(fileUri.ToIOUri())).Returns(moduleAliasesConfiguration);
 
             var settingsProvider = StrictMock.Of<ISettingsProvider>();
             settingsProvider.Setup(x => x.GetSetting(LangServerConstants.GetAllAzureContainerRegistriesForCompletionsSetting)).Returns(false);
@@ -5543,7 +5585,7 @@ module mod 'mod.bicep' = {
   params: {
     foo: {
       |
-    } 
+    }
   }
 }
 """);
@@ -5777,6 +5819,39 @@ output people Person[] = [{
         }
 
         [TestMethod]
+        public async Task Readonly_required_properties_are_not_offered_as_completions()
+        {
+            var customTypes = new[] {
+                TestTypeHelper.CreateCustomResourceTypeWithTopLevelProperties("My.Rp/myType", "2020-01-01", TypeSymbolValidationFlags.Default, [
+                    new NamedTypeProperty("required", LanguageConstants.String, TypePropertyFlags.Required),
+                    new NamedTypeProperty("readOnlyRequired", LanguageConstants.String, TypePropertyFlags.ReadOnly | TypePropertyFlags.Required),
+                ]),
+            };
+
+            var (text, cursor) = ParserHelper.GetFileWithSingleCursor("""
+            resource myRes 'My.Rp/myType@2020-01-01' = {
+              name: 'foo'
+              |
+            }
+            
+            output readOnlyRequired string = myRes.readOnlyRequired
+            """);
+
+            var bicepFile = new LanguageClientFile(InMemoryFileResolver.GetFileUri("/path/to/main.bicep"), text);
+            using var helper = await LanguageServerHelper.StartServerWithText(
+                TestContext,
+                text,
+                bicepFile.Uri,
+                services => services.WithAzResources(customTypes));
+
+            var file = new FileRequestHelper(helper.Client, bicepFile);
+            var completions = await file.RequestAndResolveCompletions(cursor);
+
+            completions.Should().Contain(x => x.Label == "required");
+            completions.Should().NotContain(x => x.Label == "readOnlyRequired");
+        }
+
+        [TestMethod]
         public async Task Identity_property_completions_are_offered_for_resource()
         {
             // Resource identity property completion
@@ -5832,7 +5907,7 @@ param foo string = 'bar'
                 this.TestContext,
                 files,
                 bicepFile.Uri,
-                services => services.WithNamespaceProvider(BuiltInTestTypes.Create()).WithFeatureOverrides(new(this.TestContext, ModuleIdentityEnabled: true))
+                services => services.WithNamespaceProvider(BuiltInTestTypes.Create())
             );
 
             var file = new FileRequestHelper(helper.Client, bicepFile);

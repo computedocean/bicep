@@ -149,6 +149,7 @@ namespace Bicep.Core
         public const string ParameterMaxValuePropertyName = "maxValue";
         public const string ParameterMinLengthPropertyName = "minLength";
         public const string ParameterMaxLengthPropertyName = "maxLength";
+        public const string ParameterUserDefinedConstraintPropertyName = "validate";
         public const string ParameterMetadataPropertyName = "metadata";
         public const string ParameterSealedPropertyName = "sealed";
         public const string MetadataDescriptionPropertyName = "description";
@@ -261,6 +262,7 @@ namespace Bicep.Core
         public static readonly TypeSymbol StringFilePath = TypeFactory.CreateStringType(validationFlags: TypeSymbolValidationFlags.IsStringFilePath);
         public static readonly TypeSymbol StringJsonFilePath = TypeFactory.CreateStringType(validationFlags: TypeSymbolValidationFlags.IsStringFilePath | TypeSymbolValidationFlags.IsStringJsonFilePath);
         public static readonly TypeSymbol StringYamlFilePath = TypeFactory.CreateStringType(validationFlags: TypeSymbolValidationFlags.IsStringFilePath | TypeSymbolValidationFlags.IsStringYamlFilePath);
+        public static readonly TypeSymbol StringDirectoryPath = TypeFactory.CreateStringType(validationFlags: TypeSymbolValidationFlags.IsStringDirectoryPath);
         public static readonly TypeSymbol StringResourceIdentifier = TypeFactory.CreateStringType(validationFlags: TypeSymbolValidationFlags.IsResourceTypeIdentifier);
 
         //Type for available loadTextContent encoding
@@ -379,12 +381,8 @@ namespace Bicep.Core
                 new(ModuleParamsPropertyName, paramsType, paramsRequiredFlag | TypePropertyFlags.WriteOnly),
                 new(ModuleOutputsPropertyName, outputsType, TypePropertyFlags.ReadOnly),
                 new(ResourceDependsOnPropertyName, ResourceOrResourceCollectionRefArray, TypePropertyFlags.WriteOnly | TypePropertyFlags.DisallowAny),
+                new(ModuleIdentityPropertyName, IdentityObject, TypePropertyFlags.DeployTimeConstant),
             ];
-
-            if (features.ModuleIdentityEnabled)
-            {
-                moduleProperties.Add(new(ModuleIdentityPropertyName, IdentityObject, TypePropertyFlags.DeployTimeConstant));
-            }
 
             if (features.ModuleExtensionConfigsEnabled)
             {
