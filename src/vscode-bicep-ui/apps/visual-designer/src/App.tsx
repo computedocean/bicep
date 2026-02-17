@@ -7,7 +7,7 @@ import type { NodeKind } from "./features/graph-engine/atoms";
 import { PanZoomProvider } from "@vscode-bicep-ui/components";
 import { getDefaultStore, useSetAtom } from "jotai";
 import { useEffect } from "react";
-import { styled } from "styled-components";
+import { styled, ThemeProvider } from "styled-components";
 import { GraphControlBar } from "./features/design-view/components/GraphControlBar";
 import { ModuleDeclaration } from "./features/design-view/components/ModuleDeclaration";
 import { ResourceDeclaration } from "./features/design-view/components/ResourceDeclaration";
@@ -20,6 +20,9 @@ import {
   nodesAtom,
 } from "./features/graph-engine/atoms";
 import { Canvas, Graph } from "./features/graph-engine/components";
+import { runLayout } from "./features/graph-engine/layout/elk-layout";
+import { GlobalStyle } from "./GlobalStyle";
+import { useTheme } from "./theming/useTheme";
 
 const store = getDefaultStore();
 const nodeConfig = store.get(nodeConfigAtom);
@@ -66,20 +69,38 @@ export function App() {
     addEdge("E->D", "E", "D");
     addEdge("C->B", "C", "B");
 
+    // Wait for DOM measurement (two frames) then run auto-layout
+    const frame1 = requestAnimationFrame(() => {
+      const frame2 = requestAnimationFrame(() => {
+        void runLayout(store);
+      });
+
+      cleanup = () => cancelAnimationFrame(frame2);
+    });
+
+    let cleanup: (() => void) | undefined;
+
     return () => {
+      cancelAnimationFrame(frame1);
+      cleanup?.();
       setEdgesAtom([]);
       setNodesAtom({});
     };
   }, [addCompoundNode, addAtomicNode, addEdge, setNodesAtom, setEdgesAtom]);
 
+  const theme = useTheme();
+
   return (
-    <PanZoomProvider>
-      <$ControlBarContainer>
-        <GraphControlBar />
-      </$ControlBarContainer>
-      <Canvas>
-        <Graph />
-      </Canvas>
-    </PanZoomProvider>
+    <ThemeProvider theme={theme}>
+      <GlobalStyle />
+      <PanZoomProvider>
+        <$ControlBarContainer>
+          <GraphControlBar />
+        </$ControlBarContainer>
+        <Canvas>
+          <Graph />
+        </Canvas>
+      </PanZoomProvider>
+    </ThemeProvider>
   );
 }
